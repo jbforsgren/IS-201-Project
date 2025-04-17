@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Snake Game</title>
+  <style>
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background-color: #111;
+      color: white;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    #game {
+      display: grid;
+      grid-template-columns: repeat(20, 20px);
+      grid-template-rows: repeat(20, 20px);
+      gap: 1px;
+      background-color: #444;
+      margin-bottom: 20px;
+    }
+    .cell {
+      width: 20px;
+      height: 20px;
+      background-color: #222;
+    }
+    .snake {
+      background: linear-gradient(to bottom right, #32CD32, #228B22);
+      border-radius: 5px;
+    }
+    .food {
+      position: relative;
+      background-color: red;
+      border-radius: 50%;
+    }
+    .food::before {
+      content: '';
+      position: absolute;
+      top: -3px;
+      left: 8px;
+      width: 4px;
+      height: 6px;
+      background-color: green;
+      border-radius: 2px;
+    }
+    #scoreboard {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 10px;
+    }
+    #status {
+      font-size: 18px;
+    }
+    #highScore {
+      font-size: 18px;
+    }
+    #playAgain,
+    #startGame {
+      padding: 10px 20px;
+      font-size: 16px;
+      border: none;
+      color: white;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    #playAgain {
+      background-color: #28a745;
+      display: none;
+    }
+    #playAgain:hover {
+      background-color: #218838;
+    }
+    #startGame {
+      background-color: #007bff;
+    }
+    #startGame:hover {
+      background-color: #0056b3;
+    }
+    #difficulty {
+      margin-bottom: 10px;
+      font-size: 16px;
+      padding: 5px;
+    }
+    canvas#confettiCanvas {
+      position: fixed;
+      top: 0;
+      left: 0;
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <a href = scratch.html>Scratch Page</a>
+  <h1>Snake Game</h1>
+  <select id="difficulty">
+    <option value="easy">Easy</option>
+    <option value="medium" selected>Medium</option>
+    <option value="hard">Hard</option>
+  </select>
+  <div id="scoreboard">
+    <div id="status">Length: 1</div>
+    <div id="highScore">High Score: 1</div>
+  </div>
+  <button id="startGame">Start Game</button>
+  <div id="game"></div>
+  <button id="playAgain">Play Again</button>
+  <canvas id="confettiCanvas"></canvas>
+
+  <!-- Sound Effects -->
+  <audio id="eatSound" src="https://freesound.org/data/previews/341/341695_3248244-lq.mp3"></audio>
+  <audio id="turnSound" src="https://freesound.org/data/previews/458/458769_930145-lq.mp3"></audio>
+  <audio id="winSound" src="https://freesound.org/data/previews/514/514977_10214630-lq.mp3"></audio>
+  <audio id="deathSound" src="https://freesound.org/data/previews/337/337049_323103-lq.mp3"></audio>
+
+  <script>
+    const game = document.getElementById('game');
+    const statusText = document.getElementById('status');
+    const highScoreText = document.getElementById('highScore');
+    const playAgainButton = document.getElementById('playAgain');
+    const startGameButton = document.getElementById('startGame');
+    const difficultySelect = document.getElementById('difficulty');
+    const canvas = document.getElementById('confettiCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const eatSound = document.getElementById('eatSound');
+    const turnSound = document.getElementById('turnSound');
+    const winSound = document.getElementById('winSound');
+    const deathSound = document.getElementById('deathSound');
+
+    const size = 20;
+    let cells = [];
+    let snake = [];
+    let direction = { x: 1, y: 0 };
+    let food = null;
+    let gameInterval;
+    let speed = 250;
+    let highScore = localStorage.getItem('snakeHighScore') || 1;
+    let confettiPieces = [];
+
+    function getSpeedByDifficulty(level) {
+      return {
+        easy: 333,
+        medium: 250,
+        hard: 166
+      }[level];
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    function showConfetti() {
+      confettiPieces = Array.from({ length: 150 }, () => ({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        r: Math.random() * 6 + 4,
+        dx: Math.random() * 2 - 1,
+        dy: Math.random() * 3 + 2,
+        color: `hsl(${Math.random() * 360}, 100%, 50%)`
+      }));
+      requestAnimationFrame(animateConfetti);
+    }
+
+    function animateConfetti() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      confettiPieces.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.fill();
+        p.x += p.dx;
+        p.y += p.dy;
+      });
+      if (confettiPieces.some(p => p.y < canvas.height)) {
+        requestAnimationFrame(animateConfetti);
+      }
+    }
+
+    function init() {
+      game.innerHTML = '';
+      cells = [];
+      for (let i = 0; i < size * size; i++) {
+        const cell = document.createElement('div');
+        cell.classList.add('cell');
+        game.appendChild(cell);
+        cells.push(cell);
+      }
+
+      snake = [{ x: 10, y: 10 }];
+      direction = { x: 1, y: 0 };
+      placeFood();
+      draw();
+      statusText.textContent = 'Length: 1';
+      playAgainButton.style.display = 'none';
+      updateHighScore();
+      clearInterval(gameInterval);
+      speed = getSpeedByDifficulty(difficultySelect.value);
+      gameInterval = setInterval(moveSnake, speed);
+    }
+
+    function getIndex(x, y) {
+      return y * size + x;
+    }
+
+    function draw() {
+      cells.forEach(cell => cell.className = 'cell');
+      snake.forEach(segment => {
+        cells[getIndex(segment.x, segment.y)].classList.add('snake');
+      });
+      if (food) {
+        cells[getIndex(food.x, food.y)].classList.add('food');
+      }
+      statusText.textContent = `Length: ${snake.length}`;
+      updateHighScore();
+    }
+
+    function placeFood() {
+      let x, y;
+      do {
+        x = Math.floor(Math.random() * size);
+        y = Math.floor(Math.random() * size);
+      } while (snake.some(segment => segment.x === x && segment.y === y));
+      food = { x, y };
+    }
+
+    function moveSnake() {
+      const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+
+      if (
+        head.x < 0 || head.x >= size || head.y < 0 || head.y >= size ||
+        snake.some(segment => segment.x === head.x && segment.y === head.y)
+      ) {
+        clearInterval(gameInterval);
+        deathSound.play();
+        statusText.textContent = '💀 Game Over!';
+        playAgainButton.style.display = 'block';
+        return;
+      }
+
+      snake.unshift(head);
+
+      if (food && head.x === food.x && head.y === food.y) {
+        eatSound.currentTime = 0;
+        eatSound.play();
+        placeFood();
+      } else {
+        snake.pop();
+      }
+
+      if (snake.length >= 100) {
+        clearInterval(gameInterval);
+        winSound.play();
+        statusText.textContent = '🎉 You Win!';
+        playAgainButton.style.display = 'block';
+        showConfetti();
+      }
+
+      draw();
+    }
+
+    function updateHighScore() {
+      if (snake.length > highScore) {
+        highScore = snake.length;
+        localStorage.setItem('snakeHighScore', highScore);
+      }
+      highScoreText.textContent = `High Score: ${highScore}`;
+    }
+
+    document.addEventListener('keydown', e => {
+      const key = e.key;
+      const { x, y } = direction;
+      if (key === 'ArrowUp' && y === 0) direction = { x: 0, y: -1 };
+      else if (key === 'ArrowDown' && y === 0) direction = { x: 0, y: 1 };
+      else if (key === 'ArrowLeft' && x === 0) direction = { x: -1, y: 0 };
+      else if (key === 'ArrowRight' && x === 0) direction = { x: 1, y: 0 };
+      else return;
+      turnSound.currentTime = 0;
+      turnSound.play();
+    });
+
+    playAgainButton.addEventListener('click', () => {
+      init();
+    });
+
+    difficultySelect.addEventListener('change', () => {
+      init();
+    });
+
+    startGameButton.addEventListener('click', () => {
+      startGameButton.style.display = 'none';
+      init();
+    });
+  </script>
+</body>
+</html>
